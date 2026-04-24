@@ -140,7 +140,7 @@
       <div class="row">
         <button class="btn secondary" id="saveAiBtn">Сохранить AI-настройки</button>
       </div>
-      <p class="muted" id="aiStatus">Ключ хранится только локально в браузере (localStorage).</p>
+      <p class="muted" id="aiStatus">Ключ не сохраняется: вводится только на текущую сессию.</p>
     </div>
     <noscript>
       <div class="card">
@@ -462,7 +462,7 @@
         if (!raw) return;
         const parsed = JSON.parse(raw);
         aiSettings.enabled = !!parsed.enabled;
-        aiSettings.apiKey = parsed.apiKey || "";
+        aiSettings.apiKey = "";
         aiSettings.model = parsed.model || AI_DEFAULT_MODEL;
       } catch (_) {
         aiSettings.enabled = false;
@@ -472,7 +472,10 @@
     }
 
     function saveAiSettings() {
-      localStorage.setItem(AI_STORAGE_KEY, JSON.stringify(aiSettings));
+      localStorage.setItem(AI_STORAGE_KEY, JSON.stringify({
+        enabled: aiSettings.enabled,
+        model: aiSettings.model || AI_DEFAULT_MODEL
+      }));
     }
 
     function bindAiControls() {
@@ -490,7 +493,7 @@
         aiSettings.apiKey = key.value.trim();
         aiSettings.model = model.value.trim() || AI_DEFAULT_MODEL;
         saveAiSettings();
-        aiStatus(aiSettings.enabled ? "AI-режим включен. Комментарий появится в блоке результатов." : "AI-режим выключен.");
+        aiStatus(aiSettings.enabled ? "AI-режим включен. Ключ действует только до перезагрузки страницы." : "AI-режим выключен.");
       };
     }
 
