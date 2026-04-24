@@ -1,0 +1,616 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Дермато-Венеро Акинатор (iPhone)</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f3f4f6;
+      color: #111827;
+    }
+    .wrap { max-width: 760px; margin: 0 auto; padding: 16px; }
+    .card {
+      background: #fff;
+      border-radius: 14px;
+      padding: 16px;
+      box-shadow: 0 6px 22px rgba(0,0,0,.08);
+      margin-bottom: 12px;
+    }
+    h1 { font-size: 22px; margin: 0 0 8px; }
+    h2 { font-size: 17px; margin: 0 0 10px; }
+    p { margin: 8px 0; line-height: 1.45; }
+    .muted { color: #6b7280; font-size: 14px; }
+    button {
+      -webkit-appearance: none;
+      appearance: none;
+      font: inherit;
+    }
+    .opt {
+      width: 100%; text-align: left; border: 1px solid #d1d5db; border-radius: 10px;
+      background: #fff; color: #111827; -webkit-text-fill-color: #111827;
+      padding: 11px; margin: 6px 0; font-size: 15px;
+    }
+    .opt:active { transform: scale(0.997); }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+    .btn {
+      border: none; border-radius: 10px; padding: 10px 13px; font-weight: 600;
+      background: #111827; color: #fff; -webkit-text-fill-color: #fff; font-size: 14px;
+    }
+    .btn.secondary { background: #4b5563; }
+    .btn:disabled {
+      opacity: .45;
+      color: #e5e7eb;
+      -webkit-text-fill-color: #e5e7eb;
+    }
+    .pill {
+      display: inline-block; font-size: 12px; padding: 4px 8px; border-radius: 999px;
+      background: #e5e7eb; color: #111827; margin-right: 6px;
+    }
+    .confidence-badge {
+      display: inline-block;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 4px 9px;
+      border-radius: 999px;
+      margin-left: 6px;
+      color: #fff;
+      vertical-align: middle;
+    }
+    .confidence-high { background: #16a34a; }
+    .confidence-medium { background: #d97706; }
+    .confidence-low { background: #dc2626; }
+    ul { margin: 8px 0 0 18px; padding: 0; }
+    li { margin: 4px 0; }
+
+    @media (prefers-color-scheme: dark) {
+      body { background: #0b1220; color: #f3f4f6; }
+      .card { background: #111827; box-shadow: none; }
+      .muted { color: #9ca3af; }
+      .opt {
+        background: #1f2937;
+        color: #f9fafb;
+        -webkit-text-fill-color: #f9fafb;
+        border-color: #374151;
+      }
+      .btn { background: #2563eb; }
+      .btn.secondary { background: #374151; }
+      .pill { background: #374151; color: #f9fafb; }
+      .confidence-high { background: #22c55e; color: #052e16; }
+      .confidence-medium { background: #f59e0b; color: #451a03; }
+      .confidence-low { background: #ef4444; color: #450a0a; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>Дермато-Венеро Акинатор</h1>
+      <p class="muted">Версия для iPhone: один файл, работает прямо в Safari (офлайн после сохранения).</p>
+      <p class="muted">Важно: это учебно-скрининговый инструмент, не финальный диагноз и не замена очного приема.</p>
+    </div>
+
+    <div id="app" class="card">
+      <h2>Загрузка опросника...</h2>
+      <p>Если вопросы не появились за 1-2 секунды, откройте файл через Safari из приложения "Файлы".</p>
+      <p class="muted">Во встроенных просмотрщиках мессенджеров/соцсетей JavaScript может быть отключен.</p>
+    </div>
+    <noscript>
+      <div class="card">
+        <h2>JavaScript отключен</h2>
+        <p>Этот файл работает только при включенном JavaScript.</p>
+        <p class="muted">Откройте файл через Safari из приложения "Файлы" или загрузите его на сайт/хостинг и откройте по обычной ссылке https.</p>
+      </div>
+    </noscript>
+  </div>
+
+  <script>
+    const TOP_RESULTS = 4;
+    const ADAPTIVE_MAX_QUESTIONS = 3;
+    const MIN_TOTAL_SIGNAL = 8;
+    const MIN_MATCHED_TAGS = 2;
+    const HIGH_SCORE_SINGLE_TAG = 55;
+
+    const BASE_QUESTIONS = [
+      { text: "Где в первую очередь локализованы изменения?", options: [
+        ["Аногенитальная зона", {loc_genital: 4}],
+        ["Складки/пах", {loc_folds: 4}],
+        ["Кисти/запястья/межпальцевые", {loc_hands_wrists: 4}],
+        ["Волосы/кожа головы/ногти", {loc_hair_scalp_nails: 4, loc_scalp: 2}],
+        ["Лицо", {loc_face: 4}],
+        ["Туловище/конечности", {loc_trunk_limbs: 4}],
+        ["Ладони/подошвы", {loc_palms_soles: 4, loc_feet: 2}],
+        ["Другая локализация / затрудняюсь ответить", {}],
+      ]},
+      { text: "Насколько выражен зуд?", options: [
+        ["Зуда нет", {itch_none: 3}],
+        ["Умеренный зуд", {itch_moderate: 3}],
+        ["Сильный зуд, особенно ночью", {itch_night: 4}],
+        ["Затрудняюсь оценить / не подходит", {}],
+      ]},
+      { text: "Есть ли боль, жжение или выраженная болезненность очагов?", options: [
+        ["Да", {pain_yes: 3}],
+        ["Нет", {}],
+        ["Не уверен(а) / не подходит", {}],
+      ]},
+      { text: "Какая морфология преобладает?", options: [
+        ["Пузырьки/эрозии", {lesion_vesicles: 4}],
+        ["Крупные пузыри", {lesion_bullae: 4}],
+        ["Кольцевидные шелушащиеся очаги", {lesion_annular_scale: 4}],
+        ["Четкие шелушащиеся бляшки", {lesion_sharply_demarcated_plaques: 4}],
+        ["Экзематозное мокнутие", {lesion_eczema: 4}],
+        ["Ярко-красные влажные очаги в складках", {lesion_moist_erythema: 4, lesion_eczema: 2}],
+        ["Папулы/ходы/расчесы", {lesion_papules_burrows: 4}],
+        ["Папулы/пустулы (акнеформные)", {lesion_papules_pustules: 4}],
+        ["Пустулы/корки/гной", {lesion_pustules_crusts: 4}],
+        ["Волдыри (крапивница)", {lesion_wheals: 4}],
+        ["Язва/шанкр", {lesion_ulcer: 4}],
+        ["Узел/опухолевидный элемент", {lesion_nodule_or_tumor: 4}],
+        ["Пигментные изменения", {lesion_pigment_change: 4}],
+        ["Ничего из перечисленного / смешанная картина", {}],
+      ]},
+      { text: "Есть уретральные/вагинальные выделения или выраженное жжение/боль при мочеиспускании?", options: [["Да", {discharge_dysuria_yes: 5}], ["Нет", {}], ["Не знаю / неприменимо", {}]] },
+      { text: "Если это применимо: был ли незащищенный половой контакт за последние 3 месяца?", options: [["Да", {sex_risk_yes: 4}], ["Нет", {}], ["Не уверен(а) / неприменимо", {}]] },
+      { text: "У близких контактов похожие симптомы?", options: [["Да", {contact_case_yes: 4}], ["Нет", {}], ["Не знаю", {}]] },
+      { text: "Есть связь с новым средством/лекарством/химией?", options: [["Да", {trigger_new_product_yes: 4}], ["Нет", {}], ["Не знаю", {}]] },
+      { text: "Есть температура/выраженное недомогание?", options: [["Да", {fever_yes: 3}], ["Нет", {}], ["Не знаю / не измерял(а)", {}]] },
+      { text: "Есть поражение слизистых?", options: [["Да", {lesion_mucosal_involvement: 4}], ["Нет", {}], ["Не знаю / неприменимо", {}]] },
+      { text: "Как распределены очаги?", options: [["Преимущественно симметрично с обеих сторон", {symmetric_distribution_yes: 3}], ["Преимущественно односторонне/локально", {}], ["Сложно оценить / не подходит", {}]] },
+      { text: "Есть ли элементы сыпи на ладонях или подошвах (именно сыпь, не только сухость)?", options: [["Да", {palms_soles_rash_yes: 4, loc_palms_soles: 2}], ["Нет", {}], ["Не знаю / не осматривал(а)", {}]] },
+      { text: "Есть ли увеличенные/болезненные паховые лимфоузлы?", options: [["Да", {inguinal_nodes_yes: 4}], ["Нет", {}], ["Не знаю", {}]] },
+      { text: "Было ли явное улучшение на противогрибковых средствах ранее?", options: [["Да", {prior_antifungal_helped_yes: 4}], ["Нет/ухудшение", {}], ["Не применял(а) / не знаю", {}]] },
+      { text: "Есть личный/семейный атопический фон (атопический дерматит, астма, аллергический ринит)?", options: [["Да", {family_atopy_yes: 4}], ["Нет", {}], ["Не знаю", {}]] },
+      { text: "Если есть язва/эрозия: болезненная или безболезненная?", options: [["Болезненная", {ulcer_painful_yes: 4, pain_yes: 1}], ["Безболезненная", {ulcer_painless_yes: 4}], ["Нет язвы/эрозии или не знаю", {}]] },
+      { text: "Если есть волдыри: они исчезают <24ч и появляются в новых местах?", options: [["Да", {wheals_transient_yes: 4}], ["Нет", {}], ["Волдырей нет / не знаю", {}]] },
+      { text: "Есть комедоны (черные/белые точки)?", options: [["Да", {comedones_yes: 4}], ["Нет", {}], ["Не знаю / не уверен(а)", {}]] },
+      { text: "Какой характер течения лучше подходит?", options: [["Острое (до 2 недель, без рецидивов)", {}], ["Подострое (2-6 недель)", {}], ["Хроническое/рецидивирующее (дольше 6 недель или повторяется)", {chronic_recurrent_yes: 3}], ["Не знаю", {}]] },
+    ];
+
+    const ADAPTIVE_QUESTIONS = [
+      { text: "Есть ли сгруппированные болезненные пузырьки/эрозии в аногенитальной зоне (типично для HSV)?", options: [["Да", {grouped_vesicles_yes: 5, lesion_vesicles: 2}], ["Нет", {}], ["Неприменимо", {}]] },
+      { text: "Есть ли плотная безболезненная язва (тип шанкра)?", options: [["Да", {painless_chancre_yes: 5, ulcer_painless_yes: 3}], ["Нет", {}], ["Неприменимо", {}]] },
+      { text: "Есть ли активный приподнятый шелушащийся край очага?", options: [["Да", {active_scaly_border_yes: 4}], ["Нет", {}], ["Неприменимо", {}]] },
+      { text: "Есть сателлитные пустулы/эрозии вокруг влажного очага в складке?", options: [["Да", {candidal_satellite_yes: 4, lesion_moist_erythema: 2}], ["Нет", {}], ["Неприменимо", {}]] },
+      { text: "На бляшках есть плотное серебристое шелушение?", options: [["Да", {silvery_scale_yes: 4}], ["Нет", {}], ["Неприменимо", {}]] },
+      { text: "Была жгучая/стреляющая боль по ходу нерва до высыпаний (односторонне)?", options: [["Да", {dermatomal_pain_yes: 5}], ["Нет", {}], ["Неприменимо", {}]] },
+    ];
+
+    const ADAPTIVE_QUESTION_GATES = {
+      "Есть ли сгруппированные болезненные пузырьки/эрозии в аногенитальной зоне (типично для HSV)?": ["loc_genital", "lesion_vesicles", "lesion_ulcer"],
+      "Есть ли плотная безболезненная язва (тип шанкра)?": ["loc_genital", "lesion_ulcer"],
+      "Есть ли активный приподнятый шелушащийся край очага?": ["lesion_annular_scale", "loc_folds", "loc_feet", "loc_scalp"],
+      "Есть сателлитные пустулы/эрозии вокруг влажного очага в складке?": ["lesion_moist_erythema", "loc_folds"],
+      "На бляшках есть плотное серебристое шелушение?": ["lesion_sharply_demarcated_plaques", "chronic_recurrent_yes", "loc_palms_soles"],
+      "Была жгучая/стреляющая боль по ходу нерва до высыпаний (односторонне)?": ["lesion_vesicles", "pain_yes", "loc_trunk_limbs"],
+    };
+
+    const BASE_QUESTION_GATES = {
+      11: ["loc_palms_soles", "sex_risk_yes", "lesion_ulcer"],
+      12: ["loc_genital", "sex_risk_yes", "lesion_ulcer", "discharge_dysuria_yes"],
+      13: ["lesion_annular_scale", "lesion_moist_erythema", "loc_folds", "loc_feet", "loc_scalp"],
+      14: ["lesion_eczema", "itch_moderate", "itch_night", "trigger_new_product_yes"],
+      15: ["lesion_ulcer"],
+      16: ["lesion_wheals"],
+      17: ["lesion_papules_pustules", "loc_face", "loc_trunk_limbs"],
+    };
+
+    const PROFILES = {
+      sti_ulcerative: {
+        summary: "Возможна ИППП с язвенно-эрозивным синдромом.",
+        tests: ["ПЦР/NAAT из очага", "Серология сифилиса", "Скрининг на ВИЧ и другие ИППП"],
+        recs: ["Очный прием дерматовенеролога", "Партнер-уведомление", "Терапия только по протоколу после верификации"],
+        tags: {loc_genital: 3, lesion_ulcer: 4, lesion_vesicles: 3, pain_yes: 2, sex_risk_yes: 3}
+      },
+      sti_discharge: {
+        summary: "Вероятен уретрит/цервицит инфекционной природы.",
+        tests: ["NAAT на гонорею/хламидию", "Тест на M. genitalium по показаниям", "Скрининг на ВИЧ/сифилис"],
+        recs: ["Очная оценка", "Лечение партнеров", "Контрольный тест по показаниям"],
+        tags: {loc_genital: 3, discharge_dysuria_yes: 5, sex_risk_yes: 3, fever_yes: 1}
+      },
+      fungal_ring: {
+        summary: "Вероятен дерматомикоз.",
+        tests: ["КОН-тест/соскоб", "Посев при рецидивах"],
+        recs: ["Топические антимикотики", "Гигиена и обработка обуви/белья", "Контроль динамики"],
+        tags: {lesion_annular_scale: 5, itch_moderate: 2, loc_folds: 2, loc_feet: 3, loc_scalp: 2}
+      },
+      candida_fold: {
+        summary: "Вероятен кандидоз складок/слизистых.",
+        tests: ["Микроскопия/посев", "Оценка факторов риска"],
+        recs: ["Топические азолы", "Снижение окклюзии", "Коррекция сопутствующих факторов"],
+        tags: {loc_folds: 4, loc_genital: 3, lesion_eczema: 2, itch_moderate: 2}
+      },
+      psoriasiform: {
+        summary: "Псориазиформный/папулосквамозный дерматоз.",
+        tests: ["Оценка площади поражения", "Биопсия при сомнениях"],
+        recs: ["Топическая терапия", "Эмоленты", "Контроль триггеров"],
+        tags: {lesion_sharply_demarcated_plaques: 5, chronic_recurrent_yes: 2, loc_scalp: 2, loc_palms_soles: 2}
+      },
+      eczematous: {
+        summary: "Экзематозный дерматит.",
+        tests: ["Исключение микоза/чесотки", "Patch-тесты по показаниям"],
+        recs: ["Убрать триггер", "Барьерный уход", "Противовоспалительная терапия по показаниям"],
+        tags: {lesion_eczema: 4, trigger_new_product_yes: 4, itch_moderate: 3, itch_night: 2}
+      },
+      scabies_like: {
+        summary: "Паразитарный зудящий дерматоз.",
+        tests: ["Дерматоскопия/соскоб", "Оценка контактов"],
+        recs: ["Лечение пациента и контактов", "Обработка текстиля", "Повторный контроль"],
+        tags: {loc_hands_wrists: 3, lesion_papules_burrows: 4, itch_night: 5, contact_case_yes: 4}
+      },
+      pyoderma: {
+        summary: "Бактериальная инфекция кожи.",
+        tests: ["Посев отделяемого", "Оценка системной реакции"],
+        recs: ["Антибактериальная терапия по протоколу", "Контроль через 24-72ч"],
+        tags: {lesion_pustules_crusts: 4, pain_yes: 3, fever_yes: 2}
+      },
+      urticaria_drug: {
+        summary: "Острая аллергическая/лекарственная реакция.",
+        tests: ["Анамнез триггеров", "Оценка тяжести"],
+        recs: ["Отмена триггера", "Антигистаминная терапия", "Срочно к врачу при тяжелом течении"],
+        tags: {lesion_wheals: 5, trigger_new_product_yes: 3, lesion_mucosal_involvement: 3}
+      },
+      neoplasm_alert: {
+        summary: "Новообразование кожи, нужна очная верификация.",
+        tests: ["Дерматоскопия", "Биопсия по показаниям"],
+        recs: ["Не откладывать очный осмотр", "Оценка ABCDE", "Маршрутизация к онкодерматологу"],
+        tags: {lesion_nodule_or_tumor: 5, lesion_ulcer: 2, chronic_recurrent_yes: 1}
+      }
+    };
+
+    const CONDITIONS = [
+      ["Генитальный герпес (A60.0)", "ИППП", "sti_ulcerative"],
+      ["Сифилис первичный (A51.0)", "ИППП", "sti_ulcerative"],
+      ["Сифилис вторичный (A51.4)", "ИППП", "sti_ulcerative"],
+      ["Гонококковый уретрит (A54.0)", "ИППП", "sti_discharge"],
+      ["Хламидийная инфекция (A56.0)", "ИППП", "sti_discharge"],
+      ["Трихомониаз (A59.0)", "ИППП", "sti_discharge"],
+      ["Паховая дерматофития (B35.6)", "Микозы", "fungal_ring"],
+      ["Дерматофития кожи (B35.4)", "Микозы", "fungal_ring"],
+      ["Микоз стоп (B35.3)", "Микозы", "fungal_ring"],
+      ["Кандидоз складок (B37.2)", "Микозы", "candida_fold"],
+      ["Вульвовагинальный кандидоз (B37.3)", "Микозы", "candida_fold"],
+      ["Контактный дерматит (L23/L24)", "Экзема/дерматит", "eczematous"],
+      ["Атопический дерматит (L20.9)", "Экзема/дерматит", "eczematous"],
+      ["Себорейный дерматит (L21.9)", "Экзема/дерматит", "eczematous"],
+      ["Псориаз (L40.x)", "Папулосквамозные", "psoriasiform"],
+      ["Красный плоский лишай (L43.9)", "Папулосквамозные", "psoriasiform"],
+      ["Чесотка (B86)", "Паразитарные", "scabies_like"],
+      ["Педикулез (B85.x)", "Паразитарные", "scabies_like"],
+      ["Импетиго (L01.0)", "Бактериальные", "pyoderma"],
+      ["Целлюлит (L03.9)", "Бактериальные", "pyoderma"],
+      ["Фолликулит (L73.9)", "Бактериальные", "pyoderma"],
+      ["Крапивница (L50.x)", "Аллергические", "urticaria_drug"],
+      ["Лекарственная токсикодермия (L27.0)", "Аллергические", "urticaria_drug"],
+      ["Стивенса-Джонсона/ТЭН (L51.1)", "Аллергические", "urticaria_drug"],
+      ["Базалиома (C44.9)", "Новообразования", "neoplasm_alert"],
+      ["Плоскоклеточный рак кожи (C44.9)", "Новообразования", "neoplasm_alert"],
+      ["Меланома (C43.9)", "Новообразования", "neoplasm_alert"],
+      ["Актинический кератоз (L57.0)", "Новообразования", "neoplasm_alert"],
+    ];
+
+    const CONDITION_ADJUSTMENTS = {
+      "Генитальный герпес (A60.0)": {lesion_vesicles: 5, pain_yes: 2, ulcer_painful_yes: 2, ulcer_painless_yes: -3, grouped_vesicles_yes: 6, painless_chancre_yes: -5, inguinal_nodes_yes: 1},
+      "Сифилис первичный (A51.0)": {lesion_ulcer: 5, ulcer_painless_yes: 5, pain_yes: -3, painless_chancre_yes: 6, grouped_vesicles_yes: -5, inguinal_nodes_yes: 3, palms_soles_rash_yes: 2},
+      "Сифилис вторичный (A51.4)": {loc_palms_soles: 5, fever_yes: 2, lesion_ulcer: -2, palms_soles_rash_yes: 5, inguinal_nodes_yes: 2},
+      "Гонококковый уретрит (A54.0)": {discharge_dysuria_yes: 3, pain_yes: 1, inguinal_nodes_yes: 1},
+      "Хламидийная инфекция (A56.0)": {discharge_dysuria_yes: 2, inguinal_nodes_yes: 1},
+      "Паховая дерматофития (B35.6)": {loc_folds: 3, lesion_annular_scale: 2, active_scaly_border_yes: 4, prior_antifungal_helped_yes: 3},
+      "Микоз стоп (B35.3)": {loc_feet: 4, lesion_annular_scale: 2, active_scaly_border_yes: 4, prior_antifungal_helped_yes: 3},
+      "Кандидоз складок (B37.2)": {loc_folds: 4, lesion_moist_erythema: 3, candidal_satellite_yes: 5, prior_antifungal_helped_yes: 4},
+      "Контактный дерматит (L23/L24)": {trigger_new_product_yes: 3, lesion_eczema: 2, symmetric_distribution_yes: -1},
+      "Псориаз (L40.x)": {lesion_sharply_demarcated_plaques: 3, chronic_recurrent_yes: 2, silvery_scale_yes: 4, symmetric_distribution_yes: 3},
+      "Чесотка (B86)": {itch_night: 3, contact_case_yes: 3, lesion_papules_burrows: 3},
+      "Крапивница (L50.x)": {lesion_wheals: 4, wheals_transient_yes: 4},
+      "Лекарственная токсикодермия (L27.0)": {trigger_new_product_yes: 3, fever_yes: 2},
+      "Стивенса-Джонсона/ТЭН (L51.1)": {lesion_mucosal_involvement: 6, fever_yes: 4, trigger_new_product_yes: 3},
+      "Меланома (C43.9)": {lesion_nodule_or_tumor: 4, chronic_recurrent_yes: 2, symmetric_distribution_yes: -2},
+      "Опоясывающий герпес (B02.9)": {dermatomal_pain_yes: 6, lesion_vesicles: 2},
+      "Атопический дерматит (L20.9)": {family_atopy_yes: 4, symmetric_distribution_yes: 2},
+    };
+
+    function renderFatalError(message) {
+      app.innerHTML = `
+        <h2>Не удалось запустить</h2>
+        <p>${message}</p>
+        <p class="muted">Проверьте, что файл сохранен полностью и откройте его снова в Safari.</p>
+      `;
+    }
+
+    function validateKnowledgeBase() {
+      if (!Array.isArray(BASE_QUESTIONS) || BASE_QUESTIONS.length === 0) {
+        return "Не найдены базовые вопросы (BASE_QUESTIONS).";
+      }
+      if (!Array.isArray(CONDITIONS) || CONDITIONS.length === 0) {
+        return "Не найден список гипотез (CONDITIONS).";
+      }
+      if (!PROFILES || typeof PROFILES !== "object" || Object.keys(PROFILES).length === 0) {
+        return "Не найдены профили базы знаний (PROFILES).";
+      }
+      return null;
+    }
+
+    let phase = "base";
+    let idx = 0;
+    const baseAnswers = [];
+    const adaptiveAnswers = [];
+    let adaptiveQueue = [];
+    const app = document.getElementById("app");
+
+    function addTags(target, source) {
+      for (const [k, v] of Object.entries(source)) target[k] = (target[k] || 0) + v;
+    }
+
+    function collectUserTags(includeAdaptive = true) {
+      const userTags = {};
+      for (const a of baseAnswers) addTags(userTags, a);
+      if (includeAdaptive) {
+        for (const a of adaptiveAnswers) addTags(userTags, a);
+      }
+      return userTags;
+    }
+
+    function shouldAskBaseQuestion(index, userTags) {
+      const gate = BASE_QUESTION_GATES[index];
+      if (!gate) return true;
+      return gate.some((tag) => userTags[tag]);
+    }
+
+    function visibleBaseQuestionIndices(userTags) {
+      const indices = [];
+      for (let i = 0; i < BASE_QUESTIONS.length; i++) {
+        if (shouldAskBaseQuestion(i, userTags)) indices.push(i);
+      }
+      return indices;
+    }
+
+    function score(includeAdaptive = true) {
+      const userTags = collectUserTags(includeAdaptive);
+      const totalSignal = Object.values(userTags).reduce((acc, v) => acc + v, 0);
+      if (totalSignal < MIN_TOTAL_SIGNAL) return [];
+      const out = CONDITIONS.map(([title, category, profileKey]) => {
+        const p = PROFILES[profileKey];
+        const merged = { ...p.tags };
+        const delta = CONDITION_ADJUSTMENTS[title] || {};
+        for (const [tag, add] of Object.entries(delta)) merged[tag] = (merged[tag] || 0) + add;
+        let raw = 0;
+        let matched = 0;
+        let positives = 0;
+        for (const [tag, w] of Object.entries(merged)) {
+          if (w > 0) positives++;
+          if (userTags[tag]) {
+            const c = userTags[tag] * w;
+            raw += c;
+            if (c > 0) matched++;
+          }
+        }
+        if (raw <= 0) return null;
+        const coverage = Math.min(matched / Math.max(positives, 1), 1);
+        const finalScore = raw * (0.7 + 0.3 * coverage);
+        if (matched < MIN_MATCHED_TAGS && finalScore < HIGH_SCORE_SINGLE_TAG) return null;
+        return { title, category, profileKey, score: finalScore, matched };
+      }).filter(Boolean).sort((a, b) => b.score - a.score);
+      return out;
+    }
+
+    function discriminationScore(question, candidates) {
+      let best = 0;
+      for (const [, optionTags] of question.options) {
+        const impacts = candidates.map((c) => {
+          const p = PROFILES[c.profileKey];
+          const merged = { ...p.tags };
+          const delta = CONDITION_ADJUSTMENTS[c.title] || {};
+          for (const [tag, add] of Object.entries(delta)) merged[tag] = (merged[tag] || 0) + add;
+          let impact = 0;
+          for (const [tag, val] of Object.entries(optionTags)) impact += val * (merged[tag] || 0);
+          return impact;
+        });
+        if (impacts.length) {
+          const spread = Math.max(...impacts) - Math.min(...impacts);
+          if (spread > best) best = spread;
+        }
+      }
+      return best;
+    }
+
+    function adaptiveQuestionCount(initial) {
+      if (initial.length < 2) return 0;
+      const margin = initial[0].score - initial[1].score;
+      if (margin < 8) return 3;
+      if (margin < 16) return 2;
+      return 1;
+    }
+
+    function confidenceAssessment(scored, userTags) {
+      if (!scored.length) return { level: "низкая", reason: "нет достаточных данных для ранжирования" };
+      const totalSignal = Object.values(userTags).reduce((acc, v) => acc + v, 0);
+      const top = scored[0];
+      const second = scored[1] || { score: 0 };
+      const margin = top.score - second.score;
+      const matches = top.matched || 0;
+
+      if (totalSignal < 14) {
+        return { level: "низкая", reason: `мало информативных ответов (суммарный сигнал: ${totalSignal})` };
+      }
+      if (top.score >= 70 && margin >= 15 && matches >= 4) {
+        return { level: "высокая", reason: `выраженный отрыв от 2-го места (${margin.toFixed(1)}) и много совпавших признаков (${matches})` };
+      }
+      if (top.score >= 45 && margin >= 7 && matches >= 3) {
+        return { level: "средняя", reason: `есть отрыв от 2-го места (${margin.toFixed(1)}), но часть признаков неспецифична` };
+      }
+      return { level: "низкая", reason: `небольшой отрыв от 2-го места (${margin.toFixed(1)}) или мало специфичных совпадений (${matches})` };
+    }
+
+    function pickAdaptiveQuestions(initial) {
+      if (initial.length < 2) return [];
+      const topCandidates = initial.slice(0, 3);
+      const currentTags = collectUserTags(false);
+      const ranked = ADAPTIVE_QUESTIONS
+        .map((q) => ({ q, score: discriminationScore(q, topCandidates) }))
+        .filter((x) => {
+          const gate = ADAPTIVE_QUESTION_GATES[x.q.text];
+          if (!gate) return true;
+          return gate.some((tag) => currentTags[tag]);
+        })
+        .filter((x) => x.score > 0)
+        .sort((a, b) => b.score - a.score);
+      const count = Math.min(adaptiveQuestionCount(initial), ADAPTIVE_MAX_QUESTIONS);
+      return ranked.slice(0, count).map((x) => x.q);
+    }
+
+    function finishBasePhase() {
+      const initial = score(false);
+      adaptiveQueue = pickAdaptiveQuestions(initial);
+      if (adaptiveQueue.length) {
+        phase = "adaptive";
+        idx = 0;
+        renderQuestion();
+      } else {
+        renderResult();
+      }
+    }
+
+    function renderQuestion() {
+      const activeQuestions = phase === "base" ? BASE_QUESTIONS : adaptiveQueue;
+      if (phase === "base") {
+        while (idx < activeQuestions.length && !shouldAskBaseQuestion(idx, collectUserTags(false))) {
+          baseAnswers[idx] = {};
+          idx++;
+        }
+        if (idx >= activeQuestions.length) {
+          finishBasePhase();
+          return;
+        }
+      }
+      const q = activeQuestions[idx];
+      const stageTitle = phase === "base" ? "Базовый этап" : "Уточняющий этап";
+      let progressCurrent = idx + 1;
+      let progressTotal = activeQuestions.length;
+      let stageMeta = "";
+      if (phase === "base") {
+        const visible = visibleBaseQuestionIndices(collectUserTags(false));
+        const position = visible.indexOf(idx);
+        progressCurrent = position >= 0 ? position + 1 : progressCurrent;
+        progressTotal = visible.length || progressTotal;
+        stageMeta = '<p class="muted">Прогресс динамический: учитываются только релевантные вопросы.</p>';
+      }
+      app.innerHTML = `
+        <h2>${stageTitle}: вопрос ${progressCurrent} из ${progressTotal}</h2>
+        ${stageMeta}
+        <p>${q.text}</p>
+        <div id="opts"></div>
+        <div class="row">
+          <button class="btn secondary" id="backBtn">Назад</button>
+          <button class="btn secondary" id="resetBtn">Сброс</button>
+        </div>
+      `;
+      const opts = document.getElementById("opts");
+      q.options.forEach(([label, tags]) => {
+        const btn = document.createElement("button");
+        btn.className = "opt";
+        btn.textContent = label;
+        btn.onclick = () => {
+          if (phase === "base") baseAnswers[idx] = tags;
+          else adaptiveAnswers[idx] = tags;
+          idx++;
+
+          if (idx >= activeQuestions.length) {
+            if (phase === "base") {
+              while (idx < activeQuestions.length && !shouldAskBaseQuestion(idx, collectUserTags(false))) {
+                baseAnswers[idx] = {};
+                idx++;
+              }
+              if (idx >= activeQuestions.length) {
+                finishBasePhase();
+              } else {
+                renderQuestion();
+              }
+            } else {
+              renderResult();
+            }
+          } else {
+            renderQuestion();
+          }
+        };
+        opts.appendChild(btn);
+      });
+      document.getElementById("backBtn").onclick = () => {
+        if (idx > 0) {
+          idx--;
+          renderQuestion();
+          return;
+        }
+        if (phase === "adaptive") {
+          phase = "base";
+          idx = BASE_QUESTIONS.length - 1;
+          renderQuestion();
+        }
+      };
+      document.getElementById("resetBtn").onclick = resetAll;
+    }
+
+    function renderResult() {
+      const scored = score(true);
+      const top = scored.slice(0, TOP_RESULTS);
+      const conf = confidenceAssessment(scored, collectUserTags(true));
+      if (!top.length) {
+        app.innerHTML = `
+          <h2>Результат</h2>
+          <p>Недостаточно данных для гипотезы. Нужен очный осмотр и дообследование.</p>
+          <div class="row"><button class="btn" id="retryBtn">Пройти заново</button></div>
+        `;
+        document.getElementById("retryBtn").onclick = resetAll;
+        return;
+      }
+      const blocks = top.map((x, i) => {
+        const p = PROFILES[x.profileKey];
+        return `
+          <div class="card" style="margin:12px 0 0;padding:12px;">
+            <span class="pill">${x.category}</span><span class="pill">Скоринг: ${x.score.toFixed(1)}</span>
+            <h2 style="margin-top:8px;">${i + 1}) ${x.title}</h2>
+            <p>${p.summary}</p>
+            <p><strong>Что подтвердить:</strong></p>
+            <ul>${p.tests.map(t => `<li>${t}</li>`).join("")}</ul>
+            <p><strong>Первичная тактика:</strong></p>
+            <ul>${p.recs.map(t => `<li>${t}</li>`).join("")}</ul>
+          </div>
+        `;
+      }).join("");
+      app.innerHTML = `
+        <h2>${TOP_RESULTS === 1 ? "Наиболее вероятный вариант" : `Топ-${TOP_RESULTS} гипотез`}</h2>
+        <p>
+          <strong>Уверенность модели:</strong>
+          <span class="confidence-badge confidence-${conf.level === "высокая" ? "high" : conf.level === "средняя" ? "medium" : "low"}">${conf.level}</span>
+        </p>
+        <p class="muted">Почему так: ${conf.reason}</p>
+        ${blocks}
+        <p class="muted">При температуре, поражении слизистых, быстро прогрессирующих высыпаниях, беременности или иммунодефиците нужна срочная очная помощь.</p>
+        <div class="row"><button class="btn" id="retryBtn">Пройти заново</button></div>
+      `;
+      document.getElementById("retryBtn").onclick = resetAll;
+    }
+
+    function resetAll() {
+      phase = "base";
+      idx = 0;
+      baseAnswers.length = 0;
+      adaptiveAnswers.length = 0;
+      adaptiveQueue = [];
+      renderQuestion();
+    }
+
+    try {
+      const validationError = validateKnowledgeBase();
+      if (validationError) {
+        renderFatalError(validationError);
+      } else {
+        renderQuestion();
+      }
+    } catch (e) {
+      renderFatalError(`Ошибка JavaScript: ${e && e.message ? e.message : "неизвестная ошибка"}.`);
+    }
+  </script>
+</body>
+</html>
