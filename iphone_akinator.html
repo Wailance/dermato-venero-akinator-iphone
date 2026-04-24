@@ -129,11 +129,11 @@
       <p class="muted">Во встроенных просмотрщиках мессенджеров/соцсетей JavaScript может быть отключен.</p>
     </div>
     <div class="card">
-      <h2>AI-режим (опционально)</h2>
-      <p class="muted">ИИ использует вашу базу знаний и ответы для более персонального дифференциального комментария.</p>
+      <h2>AI-движок Акинатора</h2>
+      <p class="muted">Если включено, вопросы и итоговый дифференциальный вывод формируются ИИ на базе вашей базы знаний.</p>
       <label class="checkbox-row">
         <input id="aiEnabled" type="checkbox">
-        <span>Включить AI-анализ в результатах</span>
+        <span>Включить полный AI-режим опроса</span>
       </label>
       <input id="aiApiKey" type="password" placeholder="OpenAI API key (sk-...)">
       <input id="aiModel" type="text" placeholder="Модель (например, gpt-4.1-mini)">
@@ -426,6 +426,7 @@
     const BASE_SEED_ORDER = [0, 1, 3];
     const AI_STORAGE_KEY = "derm_akinator_ai_settings_v1";
     const AI_DEFAULT_MODEL = "gpt-4.1-mini";
+    const AI_INTERVIEW_MAX_QUESTIONS = 8;
     let phase = "base";
     let idx = 0;
     const baseAnswers = [];
@@ -437,6 +438,13 @@
     let basePointer = 0;
     const app = document.getElementById("app");
     const aiSettings = { enabled: false, apiKey: "", model: AI_DEFAULT_MODEL };
+    const aiEngine = {
+      loading: false,
+      currentQuestion: null,
+      answers: [],
+      finalResult: null,
+      error: ""
+    };
 
     function addTags(target, source) {
       for (const [k, v] of Object.entries(source)) target[k] = (target[k] || 0) + v;
@@ -495,6 +503,191 @@
         saveAiSettings();
         aiStatus(aiSettings.enabled ? "AI-режим включен. Ключ действует только до перезагрузки страницы." : "AI-режим выключен.");
       };
+    }
+
+    function knowledgeBaseForAi() {
+      return CONDITIONS.map(([title, category, profileKey]) => {
+        const p = PROFILES[profileKey];
+        return {
+          title,
+          category,
+          summary: p.summary,
+          tests: p.tests,
+          recs: p.recs
+        };
+      });
+    }
+
+    function parseAiJson(text) {
+      if (!text) return null;
+      let cleaned = text.trim();
+      if (cleaned.startsWith("```")) {
+        cleaned = cleaned.replace(/^```[a-zA-Z]*\n?/, "").replace(/\n?```$/, "").trim();
+      }
+      try {
+        return JSON.parse(cleaned);
+      } catch (_) {
+        const start = cleaned.indexOf("{");
+        const end = cleaned.lastIndexOf("}");
+        if (start >= 0 && end > start) {
+          try {
+            return JSON.parse(cleaned.slice(start, end + 1));
+          } catch (_) {
+            return null;
+          }
+        }
+        return null;
+      }
+    }
+
+    function normalizeAiQuestion(raw) {
+      if (!raw || typeof raw.question !== "string") return null;
+      let options = Array.isArray(raw.options) ? raw.options.filter((x) => typeof x === "string" && x.trim()) : [];
+      options = options.map((x) => x.trim()).slice(0, 6);
+      if (options.length < 2) return null;
+      if (!options.some((x) => x.toLowerCase().includes("затрудня"))) options.push("Затрудняюсь ответить");
+      return { question: raw.question.trim(), options };
+    }
+
+    function normalizeAiFinal(raw) {
+      if (!raw || !Array.isArray(raw.top)) return null;
+      const top = raw.top
+        .filter((x) => x && typeof x.title === "string")
+        .slice(0, TOP_RESULTS)
+        .map((x) => ({
+          title: x.title.trim(),
+          category: typeof x.category === "string" ? x.category.trim() : "Гипотеза",
+          why: typeof x.why === "string" ? x.why.trim() : "",
+          tests: Array.isArray(x.tests) ? x.tests.filter((t) => typeof t === "string").slice(0, 4) : [],
+          recs: Array.isArray(x.recs) ? x.recs.filter((t) => typeof t === "string").slice(0, 4) : []
+        }));
+      if (!top.length) return null;
+      return {
+        confidence: typeof raw.confidence === "string" ? raw.confidence : "средняя",
+        reason: typeof raw.reason === "string" ? raw.reason : "ИИ выполнил дифференциальный анализ по ответам.",
+        top,
+        nextQuestions: Array.isArray(raw.nextQuestions) ? raw.nextQuestions.filter((x) => typeof x === "string").slice(0, 3) : []
+      };
+    }
+
+    async function callAiEngineDecision(forceFinal = false) {
+      const payload = {
+        forceFinal,
+        maxQuestions: AI_INTERVIEW_MAX_QUESTIONS,
+        answeredCount: aiEngine.answers.length,
+        answers: aiEngine.answers,
+        knowledgeBase: knowledgeBaseForAi()
+      };
+      const r = await fetch("https://api.openai.com/v1/responses", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${aiSettings.apiKey}`
+        },
+        body: JSON.stringify({
+          model: aiSettings.model || AI_DEFAULT_MODEL,
+          temperature: 0.2,
+          max_output_tokens: 900,
+          input: [
+            {
+              role: "system",
+              content: "Ты клинический ассистент по дерматовенерологии. Ты управляешь акинатором по переданной базе знаний. Всегда отвечай строго JSON без markdown. Формат: {\"action\":\"ask\"|\"final\",\"question\":\"...\",\"options\":[\"...\"],\"top\":[{\"title\":\"...\",\"category\":\"...\",\"why\":\"...\",\"tests\":[\"...\"],\"recs\":[\"...\"]}],\"confidence\":\"низкая|средняя|высокая\",\"reason\":\"...\",\"nextQuestions\":[\"...\"]}. Если action=ask, нужны question/options. Если action=final, нужны top/confidence/reason."
+            },
+            {
+              role: "user",
+              content: `Сформируй следующий шаг опроса по JSON данным:\n${JSON.stringify(payload)}`
+            }
+          ]
+        })
+      });
+      if (!r.ok) {
+        throw new Error(`HTTP ${r.status}: ${(await r.text()).slice(0, 220)}`);
+      }
+      const data = await r.json();
+      const text = aiResponseText(data);
+      const parsed = parseAiJson(text);
+      if (!parsed || !parsed.action) throw new Error("AI вернул невалидный JSON-ответ.");
+      return parsed;
+    }
+
+    function renderAiEngineError(message) {
+      app.innerHTML = `
+        <h2>AI-режим недоступен</h2>
+        <p>${escapeHtml(message)}</p>
+        <p class="muted">Можно нажать "Сброс", чтобы вернуться в классический режим (выключив AI в настройках).</p>
+        <div class="row">
+          <button class="btn secondary" id="resetBtn">Сброс</button>
+        </div>
+      `;
+      document.getElementById("resetBtn").onclick = resetAll;
+    }
+
+    function renderAiEngineResult() {
+      const out = aiEngine.finalResult;
+      if (!out) {
+        renderAiEngineError("Не удалось получить финальный AI-результат.");
+        return;
+      }
+      const blocks = out.top.map((x, i) => `
+        <div class="card" style="margin:12px 0 0;padding:12px;">
+          <span class="pill">${escapeHtml(x.category)}</span>
+          <h2 style="margin-top:8px;">${i + 1}) ${escapeHtml(x.title)}</h2>
+          <p>${escapeHtml(x.why || "ИИ выбрал гипотезу на основании совокупности ответов.")}</p>
+          <p><strong>Что подтвердить:</strong></p>
+          <ul>${(x.tests.length ? x.tests : ["Очная оценка и профильные тесты по показаниям"]).map((t) => `<li>${escapeHtml(t)}</li>`).join("")}</ul>
+          <p><strong>Первичная тактика:</strong></p>
+          <ul>${(x.recs.length ? x.recs : ["Наблюдение в динамике и очная верификация"]).map((t) => `<li>${escapeHtml(t)}</li>`).join("")}</ul>
+        </div>
+      `).join("");
+      const next = out.nextQuestions.length
+        ? `<p><strong>Что еще уточнить для повышения точности:</strong></p><ul>${out.nextQuestions.map((q) => `<li>${escapeHtml(q)}</li>`).join("")}</ul>`
+        : "";
+      app.innerHTML = `
+        <h2>AI-дифференциальный результат</h2>
+        <p><strong>Уверенность модели:</strong> <span class="confidence-badge confidence-${out.confidence === "высокая" ? "high" : out.confidence === "средняя" ? "medium" : "low"}">${escapeHtml(out.confidence)}</span></p>
+        <p class="muted">Почему так: ${escapeHtml(out.reason)}</p>
+        ${blocks}
+        ${next}
+        <p class="muted">Это скрининг. Финальный диагноз требует очного осмотра и верификации.</p>
+        <div class="row"><button class="btn" id="retryBtn">Пройти заново</button></div>
+      `;
+      document.getElementById("retryBtn").onclick = resetAll;
+    }
+
+    async function requestAiStep(forceFinal = false) {
+      if (!aiSettings.apiKey) {
+        renderAiEngineError("Для AI-режима нужен API-ключ.");
+        return;
+      }
+      aiEngine.loading = true;
+      app.innerHTML = `
+        <h2>AI-этап</h2>
+        <p>AI подбирает ${forceFinal ? "финальный вывод" : "следующий вопрос"}...</p>
+        <p class="muted">Обычно это занимает 1-3 секунды.</p>
+      `;
+      try {
+        const decision = await callAiEngineDecision(forceFinal);
+        if (decision.action === "final") {
+          const finalOut = normalizeAiFinal(decision);
+          if (!finalOut) throw new Error("AI прислал пустой финальный результат.");
+          aiEngine.finalResult = finalOut;
+          aiEngine.loading = false;
+          renderAiEngineResult();
+          return;
+        }
+        const q = normalizeAiQuestion(decision);
+        if (!q) throw new Error("AI прислал некорректный вопрос.");
+        if (aiEngine.answers.length >= AI_INTERVIEW_MAX_QUESTIONS) {
+          await requestAiStep(true);
+          return;
+        }
+        aiEngine.currentQuestion = q;
+        aiEngine.loading = false;
+        renderQuestion();
+      } catch (e) {
+        aiEngine.loading = false;
+        renderAiEngineError(e && e.message ? e.message : "Неизвестная ошибка AI.");
+      }
     }
 
     function getConditionTagModel(title, profileKey) {
@@ -789,6 +982,54 @@
     }
 
     function renderQuestion() {
+      if (phase === "ai") {
+        if (!aiEngine.currentQuestion) {
+          requestAiStep(false);
+          return;
+        }
+        const qAi = aiEngine.currentQuestion;
+        const progressCurrent = aiEngine.answers.length + 1;
+        const progressTotal = AI_INTERVIEW_MAX_QUESTIONS;
+        app.innerHTML = `
+          <h2>AI-этап: вопрос ${progressCurrent} из ${progressTotal}</h2>
+          <p class="muted">Следующий вопрос подбирается ИИ по вашим предыдущим ответам и базе знаний.</p>
+          <p>${qAi.question}</p>
+          <div id="opts"></div>
+          <div class="row">
+            <button class="btn secondary" id="backBtn">Назад</button>
+            <button class="btn secondary" id="resetBtn">Сброс</button>
+          </div>
+        `;
+        const optsAi = document.getElementById("opts");
+        qAi.options.forEach((label) => {
+          const btn = document.createElement("button");
+          btn.className = "opt";
+          btn.textContent = label;
+          btn.onclick = () => {
+            aiEngine.answers.push({
+              question: qAi.question,
+              answer: label,
+              options: qAi.options.slice(0)
+            });
+            aiEngine.currentQuestion = null;
+            requestAiStep(aiEngine.answers.length >= AI_INTERVIEW_MAX_QUESTIONS);
+          };
+          optsAi.appendChild(btn);
+        });
+        document.getElementById("backBtn").onclick = () => {
+          if (aiEngine.answers.length > 0) {
+            const prev = aiEngine.answers.pop();
+            aiEngine.currentQuestion = {
+              question: prev.question,
+              options: Array.isArray(prev.options) ? prev.options : ["Да", "Нет", "Затрудняюсь ответить"]
+            };
+            renderQuestion();
+          }
+        };
+        document.getElementById("resetBtn").onclick = resetAll;
+        return;
+      }
+
       let q;
       let baseQuestionIndex = -1;
       const activeQuestions = phase === "adaptive" ? adaptiveQueue : [];
@@ -941,7 +1182,7 @@
     }
 
     function resetAll() {
-      phase = "base";
+      phase = (aiSettings.enabled && !!aiSettings.apiKey) ? "ai" : "base";
       idx = 0;
       baseAnswers.length = 0;
       baseAnswerLabels.length = 0;
@@ -950,6 +1191,14 @@
       adaptiveQueue = [];
       baseAskedOrder.length = 0;
       basePointer = 0;
+      aiEngine.loading = false;
+      aiEngine.currentQuestion = null;
+      aiEngine.answers.length = 0;
+      aiEngine.finalResult = null;
+      aiEngine.error = "";
+      if (aiSettings.enabled && !aiSettings.apiKey) {
+        aiStatus("AI-режим включен, но нет API-ключа. Запущен классический режим.");
+      }
       renderQuestion();
     }
 
@@ -960,7 +1209,7 @@
       if (validationError) {
         renderFatalError(validationError);
       } else {
-        renderQuestion();
+        resetAll();
       }
     } catch (e) {
       renderFatalError(`Ошибка JavaScript: ${e && e.message ? e.message : "неизвестная ошибка"}.`);
