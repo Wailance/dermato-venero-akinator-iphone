@@ -24,6 +24,30 @@
     h2 { font-size: 17px; margin: 0 0 10px; }
     p { margin: 8px 0; line-height: 1.45; }
     .muted { color: #6b7280; font-size: 14px; }
+    input[type="password"], input[type="text"] {
+      width: 100%;
+      box-sizing: border-box;
+      border: 1px solid #d1d5db;
+      border-radius: 10px;
+      padding: 10px;
+      font: inherit;
+      margin-top: 6px;
+      margin-bottom: 8px;
+      background: #fff;
+      color: #111827;
+      -webkit-text-fill-color: #111827;
+    }
+    .checkbox-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 8px 0;
+      font-size: 14px;
+    }
+    .checkbox-row input {
+      width: 16px;
+      height: 16px;
+    }
     button {
       -webkit-appearance: none;
       appearance: none;
@@ -70,6 +94,12 @@
       body { background: #0b1220; color: #f3f4f6; }
       .card { background: #111827; box-shadow: none; }
       .muted { color: #9ca3af; }
+      input[type="password"], input[type="text"] {
+        background: #1f2937;
+        border-color: #374151;
+        color: #f9fafb;
+        -webkit-text-fill-color: #f9fafb;
+      }
       .opt {
         background: #1f2937;
         color: #f9fafb;
@@ -97,6 +127,20 @@
       <h2>Загрузка опросника...</h2>
       <p>Если вопросы не появились за 1-2 секунды, откройте файл через Safari из приложения "Файлы".</p>
       <p class="muted">Во встроенных просмотрщиках мессенджеров/соцсетей JavaScript может быть отключен.</p>
+    </div>
+    <div class="card">
+      <h2>AI-режим (опционально)</h2>
+      <p class="muted">ИИ использует вашу базу знаний и ответы для более персонального дифференциального комментария.</p>
+      <label class="checkbox-row">
+        <input id="aiEnabled" type="checkbox">
+        <span>Включить AI-анализ в результатах</span>
+      </label>
+      <input id="aiApiKey" type="password" placeholder="OpenAI API key (sk-...)">
+      <input id="aiModel" type="text" placeholder="Модель (например, gpt-4.1-mini)">
+      <div class="row">
+        <button class="btn secondary" id="saveAiBtn">Сохранить AI-настройки</button>
+      </div>
+      <p class="muted" id="aiStatus">Ключ хранится только локально в браузере (localStorage).</p>
     </div>
     <noscript>
       <div class="card">
@@ -380,17 +424,74 @@
     }
 
     const BASE_SEED_ORDER = [0, 1, 3];
+    const AI_STORAGE_KEY = "derm_akinator_ai_settings_v1";
+    const AI_DEFAULT_MODEL = "gpt-4.1-mini";
     let phase = "base";
     let idx = 0;
     const baseAnswers = [];
+    const baseAnswerLabels = [];
     const adaptiveAnswers = [];
+    const adaptiveAnswerLabels = [];
     let adaptiveQueue = [];
     const baseAskedOrder = [];
     let basePointer = 0;
     const app = document.getElementById("app");
+    const aiSettings = { enabled: false, apiKey: "", model: AI_DEFAULT_MODEL };
 
     function addTags(target, source) {
       for (const [k, v] of Object.entries(source)) target[k] = (target[k] || 0) + v;
+    }
+
+    function escapeHtml(text) {
+      return String(text)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll("\"", "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+
+    function aiStatus(message) {
+      const node = document.getElementById("aiStatus");
+      if (node) node.textContent = message;
+    }
+
+    function loadAiSettings() {
+      try {
+        const raw = localStorage.getItem(AI_STORAGE_KEY);
+        if (!raw) return;
+        const parsed = JSON.parse(raw);
+        aiSettings.enabled = !!parsed.enabled;
+        aiSettings.apiKey = parsed.apiKey || "";
+        aiSettings.model = parsed.model || AI_DEFAULT_MODEL;
+      } catch (_) {
+        aiSettings.enabled = false;
+        aiSettings.apiKey = "";
+        aiSettings.model = AI_DEFAULT_MODEL;
+      }
+    }
+
+    function saveAiSettings() {
+      localStorage.setItem(AI_STORAGE_KEY, JSON.stringify(aiSettings));
+    }
+
+    function bindAiControls() {
+      const enabled = document.getElementById("aiEnabled");
+      const key = document.getElementById("aiApiKey");
+      const model = document.getElementById("aiModel");
+      const saveBtn = document.getElementById("saveAiBtn");
+      if (!enabled || !key || !model || !saveBtn) return;
+
+      enabled.checked = aiSettings.enabled;
+      key.value = aiSettings.apiKey;
+      model.value = aiSettings.model || AI_DEFAULT_MODEL;
+      saveBtn.onclick = () => {
+        aiSettings.enabled = !!enabled.checked;
+        aiSettings.apiKey = key.value.trim();
+        aiSettings.model = model.value.trim() || AI_DEFAULT_MODEL;
+        saveAiSettings();
+        aiStatus(aiSettings.enabled ? "AI-режим включен. Комментарий появится в блоке результатов." : "AI-режим выключен.");
+      };
     }
 
     function getConditionTagModel(title, profileKey) {
@@ -572,6 +673,106 @@
       return { supporting: supporting.slice(0, 3), conflicting: conflicting.slice(0, 2) };
     }
 
+    function answeredQuestionList() {
+      const answers = [];
+      for (const qIndex of baseAskedOrder) {
+        if (!baseAnswerLabels[qIndex]) continue;
+        answers.push({ stage: "base", question: BASE_QUESTIONS[qIndex].text, answer: baseAnswerLabels[qIndex] });
+      }
+      for (let i = 0; i < adaptiveQueue.length; i++) {
+        if (!adaptiveAnswerLabels[i]) continue;
+        answers.push({ stage: "adaptive", question: adaptiveQueue[i].text, answer: adaptiveAnswerLabels[i] });
+      }
+      return answers;
+    }
+
+    function aiResponseText(data) {
+      if (!data) return "";
+      if (typeof data.output_text === "string" && data.output_text.trim()) return data.output_text.trim();
+      if (!Array.isArray(data.output)) return "";
+      const pieces = [];
+      for (const item of data.output) {
+        if (!item || !Array.isArray(item.content)) continue;
+        for (const part of item.content) {
+          if (part && part.type === "output_text" && part.text) pieces.push(part.text);
+        }
+      }
+      return pieces.join("\n").trim();
+    }
+
+    async function renderAiDifferential(scored, userTags) {
+      const aiBox = document.getElementById("aiResult");
+      if (!aiBox) return;
+      if (!aiSettings.enabled) {
+        aiBox.innerHTML = "<p class=\"muted\">AI-режим выключен.</p>";
+        return;
+      }
+      if (!aiSettings.apiKey) {
+        aiBox.innerHTML = "<p class=\"muted\">Укажите API-ключ в блоке AI-настроек, чтобы включить анализ.</p>";
+        return;
+      }
+
+      aiBox.innerHTML = "<p class=\"muted\">AI анализирует ответы...</p>";
+      const top = scored.slice(0, 5).map((x) => {
+        const p = PROFILES[x.profileKey];
+        return {
+          title: x.title,
+          category: x.category,
+          score: Number(x.score.toFixed(1)),
+          summary: p.summary,
+          tests: p.tests,
+          recs: p.recs
+        };
+      });
+
+      const payload = {
+        answers: answeredQuestionList(),
+        userTags,
+        topCandidates: top
+      };
+
+      try {
+        const r = await fetch("https://api.openai.com/v1/responses", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${aiSettings.apiKey}`
+          },
+          body: JSON.stringify({
+            model: aiSettings.model || AI_DEFAULT_MODEL,
+            temperature: 0.2,
+            max_output_tokens: 550,
+            input: [
+              {
+                role: "system",
+                content: "Ты клинический ассистент по дерматовенерологии. Работай строго по переданной базе знаний и ответам. Дай структурированный дифференциальный комментарий: 1) почему лидер на 1 месте, 2) чем отличается от ближайшего конкурента, 3) какие 2-3 уточняющих вопроса/признака максимально изменят ранжирование, 4) какие обследования приоритетны. Не ставь окончательный диагноз."
+              },
+              {
+                role: "user",
+                content: `Данные случая (JSON):\n${JSON.stringify(payload)}`
+              }
+            ]
+          })
+        });
+
+        if (!r.ok) {
+          const text = await r.text();
+          aiBox.innerHTML = `<p class="muted">AI недоступен: ${escapeHtml(text.slice(0, 250))}</p>`;
+          return;
+        }
+
+        const data = await r.json();
+        const text = aiResponseText(data);
+        if (!text) {
+          aiBox.innerHTML = "<p class=\"muted\">AI не вернул текстовый ответ. Попробуйте другую модель.</p>";
+          return;
+        }
+        aiBox.innerHTML = `<p>${escapeHtml(text).replaceAll("\n", "<br>")}</p>`;
+      } catch (e) {
+        aiBox.innerHTML = `<p class="muted">Ошибка AI-запроса: ${escapeHtml(e && e.message ? e.message : "неизвестная ошибка")}.</p>`;
+      }
+    }
+
     function finishBasePhase() {
       const initial = score(false);
       adaptiveQueue = pickAdaptiveQuestions(initial);
@@ -632,6 +833,7 @@
         btn.onclick = () => {
           if (phase === "base") {
             baseAnswers[baseQuestionIndex] = tags;
+            baseAnswerLabels[baseQuestionIndex] = label;
             if (basePointer < baseAskedOrder.length - 1) {
               baseAskedOrder.length = basePointer + 1;
             }
@@ -641,6 +843,7 @@
           }
 
           adaptiveAnswers[idx] = tags;
+          adaptiveAnswerLabels[idx] = label;
           idx++;
           if (idx >= activeQuestions.length) {
             renderResult();
@@ -722,18 +925,25 @@
           <span class="confidence-badge confidence-${conf.level === "высокая" ? "high" : conf.level === "средняя" ? "medium" : "low"}">${conf.level}</span>
         </p>
         <p class="muted">Почему так: ${conf.reason}</p>
+        <div class="card" style="margin:12px 0 0;padding:12px;">
+          <h2 style="margin-top:0;">AI-комментарий по базе знаний</h2>
+          <div id="aiResult"><p class="muted">Подготовка...</p></div>
+        </div>
         ${blocks}
         <p class="muted">При температуре, поражении слизистых, быстро прогрессирующих высыпаниях, беременности или иммунодефиците нужна срочная очная помощь.</p>
         <div class="row"><button class="btn" id="retryBtn">Пройти заново</button></div>
       `;
       document.getElementById("retryBtn").onclick = resetAll;
+      renderAiDifferential(scored, userTags);
     }
 
     function resetAll() {
       phase = "base";
       idx = 0;
       baseAnswers.length = 0;
+      baseAnswerLabels.length = 0;
       adaptiveAnswers.length = 0;
+      adaptiveAnswerLabels.length = 0;
       adaptiveQueue = [];
       baseAskedOrder.length = 0;
       basePointer = 0;
@@ -741,6 +951,8 @@
     }
 
     try {
+      loadAiSettings();
+      bindAiControls();
       const validationError = validateKnowledgeBase();
       if (validationError) {
         renderFatalError(validationError);
